@@ -1,0 +1,30 @@
+# Scenario A — Within budget (Conftest should report 0 failures, 0 denies)
+namespace: team-checkout
+environment: production
+before:
+  replicas: 2
+  cpu_cores: 0.5
+  memory_gib: 0.5
+  monthly_cost_usd: 18.25
+after:
+  replicas: 3
+  cpu_cores: 0.75
+  memory_gib: 0.75
+  monthly_cost_usd: 27.375
+delta_usd: 9.125
+delta_eom_usd: 1.177
+current_spend_usd: 14.28
+projected_eom_spend_usd: 17.55
+projected_monthly_run_rate_usd: 27.38
+projected_spend_usd: 27.38
+budget_usd: 30.0
+alert_threshold_pct: 80.0
+budget_utilization_pct: 78.0
+budget_variance_usd: 2.62
+data_available: true
+cost_data_stale: false
+data_age_hours: 1.5
+max_data_age_hours: 48.0
+data_as_of: "2026-10-27T00:00:00Z"
+pricing_version: "2026-10"
+note: "Approximation only."

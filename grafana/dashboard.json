@@ -1,0 +1,263 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Prometheus datasource",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    }
+  ],
+  "id": null,
+  "uid": "cost-gate-dashboard",
+  "title": "Cost-Aware GitOps Gate",
+  "description": "Namespace cost tracking, FinOps forecast models, budget utilization, and gate data health",
+  "tags": ["finops", "kubernetes", "cost-gate"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 2,
+  "refresh": "1m",
+  "time": { "from": "now-30d", "to": "now" },
+
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "team-checkout — Budget Utilization",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": 0  },
+              { "color": "yellow", "value": 80 },
+              { "color": "red",    "value": 100 }
+            ]
+          }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "cost_gate_budget_utilization_pct{namespace=\"team-checkout\"}",
+          "legendFormat": "Utilization %"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "team-checkout — MTD Actual Spend",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": 0  },
+              { "color": "yellow", "value": 24 },
+              { "color": "red",    "value": 30 }
+            ]
+          }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "cost_gate_current_spend_mtd_usd{namespace=\"team-checkout\"}",
+          "legendFormat": "MTD Spend $"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "team-checkout — Month-End (EOM) Forecast",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": 0  },
+              { "color": "yellow", "value": 24 },
+              { "color": "red",    "value": 30 }
+            ]
+          }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "cost_gate_projected_eom_spend_usd{namespace=\"team-checkout\"}",
+          "legendFormat": "EOM Spend $"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "team-checkout — Steady-State Run-Rate",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": 0  },
+              { "color": "yellow", "value": 24 },
+              { "color": "red",    "value": 30 }
+            ]
+          }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "cost_gate_projected_monthly_run_rate_usd{namespace=\"team-checkout\"}",
+          "legendFormat": "Run-Rate $"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Monthly Budget Limit",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "cost_gate_budget_usd{namespace=\"team-checkout\"}",
+          "legendFormat": "Budget $"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Unattributed Spend %",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": 0  },
+              { "color": "yellow", "value": 5  },
+              { "color": "red",    "value": 10 }
+            ]
+          }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "cost_gate_unattributed_pct",
+          "legendFormat": "Unattributed %"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "MTD Actual vs Projected Month-End Spend ($USD)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "cost_gate_current_spend_mtd_usd",
+          "legendFormat": "{{namespace}} — MTD Actual"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "cost_gate_projected_eom_spend_usd",
+          "legendFormat": "{{namespace}} — EOM Projected"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Budget Utilization % Over Time",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Budget (100%)" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "cost_gate_budget_utilization_pct",
+          "legendFormat": "{{namespace}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "vector(100)",
+          "legendFormat": "Budget (100%)"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Cost Gate Decision & Data Health Summary",
+      "description": "Latest FinOps evaluation values, data freshness, and budget limits",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } }
+      },
+      "options": { "sortBy": [{ "displayName": "Namespace" }] },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+          "expr": "cost_gate_current_spend_mtd_usd",
+          "legendFormat": "{{namespace}}",
+          "instant": true
+        }
+      ]
+    }
+  ]
+}

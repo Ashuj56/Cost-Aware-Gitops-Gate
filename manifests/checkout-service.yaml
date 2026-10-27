@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout
+  namespace: team-checkout
+  labels:
+    app: checkout
+    team: checkout
+spec:
+  type: ClusterIP
+  selector:
+    app: checkout
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 80

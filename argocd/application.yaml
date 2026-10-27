@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cost-gate-demo
+  namespace: argocd
+  labels:
+    project: cost-aware-gitops-gate
+  annotations:
+    # Prevents ArgoCD from syncing an over-budget change that somehow
+    # bypassed the PR gate (manual defence-in-depth)
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/YOUR_GITHUB_USERNAME/cost-aware-gitops-gate
+    targetRevision: main
+    path: manifests
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: team-checkout
+
+  syncPolicy:
+    automated:
+      prune: true          # Remove resources deleted from Git
+      selfHeal: true       # Revert manual kubectl changes (Git is source of truth)
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+
+  # Health check: ArgoCD reports Degraded if pods are not Running
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas   # Ignore HPA-driven replica changes

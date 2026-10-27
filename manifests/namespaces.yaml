@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-checkout
+  labels:
+    team: checkout
+    cost-center: team-checkout
+    app.kubernetes.io/managed-by: argocd
+  annotations:
+    cost-gate/monthly-budget-usd: "30"
+    cost-gate/alert-threshold-pct: "80"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-search
+  labels:
+    team: search
+    cost-center: team-search
+    app.kubernetes.io/managed-by: argocd
+  annotations:
+    cost-gate/monthly-budget-usd: "50"
+    cost-gate/alert-threshold-pct: "80"

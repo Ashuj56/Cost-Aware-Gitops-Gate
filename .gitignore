@@ -1,0 +1,46 @@
+# Terraform state, provider cache, plans, and local variables
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+**/*.tfvars
+!**/*.tfvars.example
+# Keep the provider lock file committed for reproducible Terraform installs.
+
+# Runtime cost data (generated at CI time, not committed)
+data/costs.json
+data/costs_before.json
+data/costs_after.json
+data/cost_report.json
+data/policy_result.json
+data/actuals_comparison.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.pem
+*.key
+.env
+*.env
+*.secret
+credentials.json
+
+# Keep the data directory placeholder
+!data/.gitkeep

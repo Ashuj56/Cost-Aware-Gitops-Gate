@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  namespace: team-checkout
+  labels:
+    app: checkout
+    team: checkout
+    cost-center: team-checkout
+  annotations:
+    # cost-gate/team links this deployment to its namespace budget
+    cost-gate/team: team-checkout
+    # Set budget-exception-approved: "true" + approved-by + reason for override scenario
+    # budget-exception-approved: "false"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: checkout
+  template:
+    metadata:
+      labels:
+        app: checkout
+        team: checkout
+        cost-center: team-checkout
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+          # Resource requests REQUIRED for cost estimation
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 30

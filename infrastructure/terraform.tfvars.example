@@ -1,0 +1,9 @@
+# Copy this file to terraform.tfvars and fill in your values.
+# Do NOT commit terraform.tfvars to version control.
+
+aws_region         = "us-east-1"
+eks_version        = "1.31"
+node_instance_type = "t3.micro"
+github_repo        = "YOUR_GITHUB_USERNAME/cost-aware-gitops-gate"
+tf_state_bucket    = "cost-gate-tf-state"
+tf_lock_table      = "cost-gate-tf-locks"

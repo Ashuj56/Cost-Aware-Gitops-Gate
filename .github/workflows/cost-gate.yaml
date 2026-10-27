@@ -1,0 +1,319 @@
+name: Cost Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - 'manifests/**'
+      - 'config/**'
+  workflow_dispatch:   # Allow manual trigger for testing
+
+permissions:
+  id-token: write        # Required for AWS OIDC token
+  contents: read         # Checkout
+  pull-requests: write   # Post PR comment, read reviews
+
+env:
+  PYTHON_VERSION: "3.12"
+  CONFTEST_VERSION: "0.51.0"
+  NAMESPACE: "team-checkout"
+  ENVIRONMENT: "production"
+
+jobs:
+  cost-gate:
+    name: "Cost Gate"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # ── 1. Checkout ─────────────────────────────────────────────────────────
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # Full history needed to diff against base
+
+      - name: Extract base branch manifest
+        id: base_manifest
+        run: |
+          git fetch origin ${{ github.base_ref }}
+          if git show origin/${{ github.base_ref }}:manifests/checkout-deployment.yaml > /tmp/checkout-base.yaml 2>/dev/null; then
+            echo "base_exists=true" >> "$GITHUB_OUTPUT"
+            echo "Base manifest extracted"
+          else
+            echo "base_exists=false" >> "$GITHUB_OUTPUT"
+            echo "⚠️  No base manifest — new file, treating as zero-cost baseline"
+            # Create an empty baseline (0 replicas) so estimator handles new deployments
+            cp manifests/checkout-deployment.yaml /tmp/checkout-base.yaml
+            python3 -c "
+          import yaml
+          m = yaml.safe_load(open('/tmp/checkout-base.yaml'))
+          m['spec']['replicas'] = 0
+          print(yaml.dump(m))
+          " > /tmp/checkout-base-zero.yaml
+            mv /tmp/checkout-base-zero.yaml /tmp/checkout-base.yaml
+          fi
+
+      # ── 2. Python setup ─────────────────────────────────────────────────────
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dependencies
+        run: pip install boto3 pyyaml
+
+      # ── 3. AWS auth via OIDC (no long-lived keys) ────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      # ── 4. Ingest current AWS costs ──────────────────────────────────────────
+      - name: Ingest current AWS spend
+        run: |
+          python scripts/ingest_costs.py team-checkout team-search --environment ${{ env.ENVIRONMENT }}
+        env:
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      # ── 5. Resolve PR override authorization (Secured via GitHub metadata) ──
+      - name: Check GitHub PR override approval
+        id: pr_override
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            // Read allowed approvers from config/budgets.yaml
+            const budgetsContent = fs.readFileSync('config/budgets.yaml', 'utf8');
+            const approversMatch = budgetsContent.match(/allowed_override_approvers:\s*\n((?:\s*-\s*[^\n]+\n)+)/);
+            let allowedApprovers = [];
+            if (approversMatch) {
+              allowedApprovers = approversMatch[1]
+                .split('\n')
+                .map(line => line.replace(/^\s*-\s*/, '').trim())
+                .filter(Boolean);
+            }
+            console.log('Allowed override approvers:', allowedApprovers);
+
+            if (context.eventName !== 'pull_request') {
+              core.setOutput('approved', 'false');
+              return;
+            }
+
+            const pr = context.payload.pull_request;
+            const labels = (pr.labels || []).map(l => l.name.toLowerCase());
+            const hasOverrideLabel = labels.includes('cost-override') || labels.includes('budget-override');
+
+            // Query PR reviews for approvals by authorized approvers
+            const reviews = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
+
+            let authorizedReviewer = null;
+            for (const review of reviews.data.reverse()) {
+              if (review.state === 'APPROVED' && allowedApprovers.includes(review.user.login)) {
+                authorizedReviewer = review.user.login;
+                break;
+              }
+            }
+
+            if (hasOverrideLabel && authorizedReviewer) {
+              console.log(`✅ Valid override approved by ${authorizedReviewer} with label cost-override`);
+              core.setOutput('approved', 'true');
+              core.setOutput('approved_by', authorizedReviewer);
+              core.setOutput('reason', `Approved via PR review by @${authorizedReviewer} with cost-override label`);
+              core.setOutput('pr_url', pr.html_url);
+            } else if (hasOverrideLabel && !authorizedReviewer) {
+              console.log('⚠️  cost-override label present, but awaiting PR approval from an authorized approver');
+              core.setOutput('approved', 'false');
+              core.setOutput('approved_by', '');
+              core.setOutput('reason', 'Awaiting approval from an authorized FinOps approver');
+              core.setOutput('pr_url', pr.html_url);
+            } else {
+              core.setOutput('approved', 'false');
+              core.setOutput('approved_by', '');
+              core.setOutput('reason', '');
+              core.setOutput('pr_url', pr.html_url);
+            }
+
+      # ── 6. Estimate cost impact ──────────────────────────────────────────────
+      - name: Estimate cost impact
+        run: |
+          OVERRIDE_ARGS=""
+          if [ "${{ steps.pr_override.outputs.approved }}" = "true" ]; then
+            OVERRIDE_ARGS="--override-approved --override-by '${{ steps.pr_override.outputs.approved_by }}' --override-reason '${{ steps.pr_override.outputs.reason }}' --override-pr '${{ steps.pr_override.outputs.pr_url }}'"
+          fi
+
+          python scripts/estimate_cost.py \
+            --base        /tmp/checkout-base.yaml \
+            --proposed    manifests/checkout-deployment.yaml \
+            --namespace   ${{ env.NAMESPACE }} \
+            --environment ${{ env.ENVIRONMENT }} \
+            $OVERRIDE_ARGS
+
+      # ── 7. Install Conftest ──────────────────────────────────────────────────
+      - name: Install Conftest ${{ env.CONFTEST_VERSION }}
+        run: |
+          curl -sSL \
+            "https://github.com/open-policy-agent/conftest/releases/download/v${{ env.CONFTEST_VERSION }}/conftest_${{ env.CONFTEST_VERSION }}_Linux_x86_64.tar.gz" \
+            | tar -xz -C /tmp
+          sudo mv /tmp/conftest /usr/local/bin/conftest
+          conftest --version
+
+      # ── 8. Run OPA policy check ──────────────────────────────────────────────
+      - name: Run cost gate policy
+        id: policy_check
+        run: |
+          conftest test data/cost_report.json \
+            --policy policies/ \
+            --output json 2>&1 | tee data/policy_result.json || true
+
+          set +e
+          conftest test data/cost_report.json --policy policies/ --output json > /dev/null 2>&1
+          CONFTEST_EXIT=$?
+          set -e
+
+          echo "conftest_exit=$CONFTEST_EXIT" >> "$GITHUB_OUTPUT"
+          echo "Conftest exit code: $CONFTEST_EXIT"
+
+      # ── 9. Validate manifests ────────────────────────────────────────────────
+      - name: Validate Kubernetes manifests
+        run: |
+          for f in manifests/*.yaml; do
+            echo "Validating $f..."
+            python3 -c "import yaml; list(yaml.safe_load_all(open('$f')))" && echo "  ✅ Valid YAML"
+          done
+
+      # ── 10. Post PR comment ──────────────────────────────────────────────────
+      - name: Post cost summary comment
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            
+            let report, policyResult;
+            try {
+              report = JSON.parse(fs.readFileSync('data/cost_report.json', 'utf8'));
+            } catch (e) {
+              console.error('Could not read cost_report.json:', e);
+              return;
+            }
+            
+            try {
+              policyResult = JSON.parse(fs.readFileSync('data/policy_result.json', 'utf8'));
+            } catch (e) {
+              policyResult = [];
+            }
+            
+            const failures = policyResult[0]?.failures || [];
+            const warnings = policyResult[0]?.warnings || [];
+            const hasOverride = report.override?.approved === true;
+            
+            let statusEmoji, statusText;
+            if (failures.length === 0 && hasOverride) {
+              statusEmoji = '⚠️';
+              statusText  = 'PASS WITH OVERRIDE';
+            } else if (failures.length === 0) {
+              statusEmoji = '✅';
+              statusText  = 'PASS';
+            } else {
+              statusEmoji = '❌';
+              statusText  = 'BLOCKED';
+            }
+            
+            const varianceColor = report.budget_variance_usd >= 0 ? '🟢' : '🔴';
+            
+            let overrideSection = '';
+            if (hasOverride) {
+              overrideSection = `
+            ### ⚠️ Budget Exception Override
+            | Field | Value |
+            |---|---|
+            | Approved by | \`${report.override.approved_by}\` |
+            | Reason | ${report.override.reason} |
+            | PR Link | ${report.override.pull_request} |
+            | Timestamp | ${report.override.timestamp} |
+            `;
+            }
+            
+            let failureSection = '';
+            if (failures.length > 0) {
+              failureSection = `
+            ### ❌ Policy Violations (Fail Closed)
+            ${failures.map(f => `- ${f.msg}`).join('\n')}
+            `;
+            }
+            
+            let warningSection = '';
+            if (warnings.length > 0) {
+              warningSection = `
+            ### ⚠️ Advisory Warnings
+            ${warnings.map(w => `- ${w.msg}`).join('\n')}
+            `;
+            }
+            
+            const body = `## ${statusEmoji} Cost Gate — ${statusText}
+            
+            ### Resource Changes
+            | Property | Before | After | Delta |
+            |---|---:|---:|---:|
+            | Replicas | ${report.before.replicas} | ${report.after.replicas} | ${report.after.replicas - report.before.replicas} |
+            | CPU request (total) | ${report.before.cpu_cores} cores | ${report.after.cpu_cores} cores | ${(report.after.cpu_cores - report.before.cpu_cores).toFixed(3)} cores |
+            | Memory request (total) | ${report.before.memory_gib} GiB | ${report.after.memory_gib} GiB | ${(report.after.memory_gib - report.before.memory_gib).toFixed(3)} GiB |
+            | Workload Monthly Cost | $${report.before.monthly_cost_usd.toFixed(2)}/mo | $${report.after.monthly_cost_usd.toFixed(2)}/mo | $${report.delta_usd >= 0 ? '+' : ''}${report.delta_usd.toFixed(2)}/mo |
+            
+            ### FinOps Projections (${report.days_elapsed} days elapsed, ${report.days_remaining} days remaining in month)
+            | Metric | Value |
+            |---|---|
+            | Current MTD AWS spend | $${report.current_spend_usd.toFixed(4)} |
+            | Prorated Delta (current month) | $${report.delta_eom_usd >= 0 ? '+' : ''}${report.delta_eom_usd.toFixed(4)} |
+            | **Projected Month-End Spend (EOM)** | **$${report.projected_eom_spend_usd.toFixed(2)}** |
+            | **Projected Steady-State Run-Rate** | **$${report.projected_monthly_run_rate_usd.toFixed(2)}/mo** |
+            | Monthly Budget | $${report.budget_usd.toFixed(2)}/mo |
+            | Budget Utilization | ${report.budget_utilization_pct.toFixed(1)}% (Alert at ${report.alert_threshold_pct}%) |
+            | Budget Variance | ${varianceColor} $${report.budget_variance_usd.toFixed(2)} |
+            
+            ### Data Health
+            | Check | Status |
+            |---|---|
+            | Cost Data Available | ${report.data_available ? '✅ YES' : '❌ NO'} |
+            | Cost Data Freshness | ${report.cost_data_stale ? '❌ STALE' : '✅ FRESH'} (${report.data_age_hours.toFixed(1)}h / max ${report.max_data_age_hours}h) |
+            | Data Timestamp | \`${report.data_as_of}\` |
+            ${overrideSection}${failureSection}${warningSection}
+            ---
+            > ℹ️ *${report.note}*
+            > 🏷️ *Pricing version: ${report.pricing_version}*`;
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+            
+            console.log(`Cost gate decision: ${statusText}`);
+
+      # ── 11. Upload artifacts ─────────────────────────────────────────────────
+      - name: Upload cost gate artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cost-gate-${{ github.run_number }}
+          path: data/
+          retention-days: 30
+
+      # ── 12. Enforce gate decision ───────────────────────────────────────────
+      - name: Enforce gate decision
+        run: |
+          CONFTEST_EXIT=${{ steps.policy_check.outputs.conftest_exit }}
+          if [ "$CONFTEST_EXIT" != "0" ]; then
+            echo "❌ Cost gate BLOCKED: policy violations found. Merge is prevented."
+            echo "   See the PR comment for details."
+            exit 1
+          fi
+          echo "✅ Cost gate PASSED."

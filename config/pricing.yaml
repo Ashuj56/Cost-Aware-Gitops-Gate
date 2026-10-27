@@ -1,0 +1,14 @@
+pricing:
+  # Approximate on-demand rates for t3.micro in us-east-1
+  # Source: Configured manually — see AWS Price List API for live rates.
+  # This file is versioned for reproducible estimates.
+  cpu_core_hour_usd: 0.04
+  memory_gb_hour_usd: 0.005
+  hours_per_month: 730
+  version: "2026-10"
+  source: "configured"
+  updated_at: "2026-10-27"
+  note: >
+    Rates are approximate. Actual AWS bills include shared node overhead,
+    EKS control-plane ($0.10/hr), NAT Gateway, data transfer, and storage.
+    This estimator covers CPU and memory requests only.

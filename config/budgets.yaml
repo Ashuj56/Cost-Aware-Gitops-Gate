@@ -1,0 +1,20 @@
+# Budget limits and FinOps governance configuration
+default_environment: production
+max_cost_data_age_hours: 48
+
+# Authorized GitHub usernames permitted to approve budget overrides
+allowed_override_approvers:
+  - finops-lead
+  - platform-admin
+  - lead-architect
+  - ashujain
+
+namespaces:
+  - name: team-checkout
+    environment: production
+    monthly_budget_usd: 30
+    alert_threshold_pct: 80
+  - name: team-search
+    environment: production
+    monthly_budget_usd: 50
+    alert_threshold_pct: 80

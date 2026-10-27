@@ -1,0 +1,39 @@
+# Scenario C — Approved exception (Conftest should report 0 failures despite over-budget)
+namespace: team-checkout
+environment: production
+before:
+  replicas: 2
+  cpu_cores: 0.5
+  memory_gib: 0.5
+  monthly_cost_usd: 18.25
+after:
+  replicas: 6
+  cpu_cores: 3.0
+  memory_gib: 6.0
+  monthly_cost_usd: 109.5
+delta_usd: 91.25
+delta_eom_usd: 11.77
+current_spend_usd: 14.28
+projected_eom_spend_usd: 37.10
+projected_monthly_run_rate_usd: 109.50
+projected_spend_usd: 109.50
+budget_usd: 30.0
+alert_threshold_pct: 80.0
+budget_utilization_pct: 365.0
+budget_variance_usd: -79.50
+data_available: true
+cost_data_stale: false
+data_age_hours: 1.5
+max_data_age_hours: 48.0
+data_as_of: "2026-10-27T00:00:00Z"
+allowed_override_approvers:
+  - finops-lead
+  - platform-admin
+override:
+  approved: true
+  approved_by: "finops-lead"
+  reason: "Planned load test — approved by FinOps lead"
+  pull_request: "https://github.com/org/repo/pull/99"
+  timestamp: "2026-10-27T01:00:00Z"
+pricing_version: "2026-10"
+note: "Approximation only."
